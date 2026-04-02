@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jao Express</title>
+    
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <style>
+        :root {
+            --primary: #0f172a;
+            --accent: #0099ff;
+            --success: #10b981;
+            --danger: #ef4444;
+            --bg: #020617;
+            --card: #1e293b;
+            --text: #f8fafc;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); display: flex; flex-direction: column; min-height: 100vh; }
+
+        header { background: var(--primary); padding: 20px; border-bottom: 2px solid #1e293b; display: flex; justify-content: space-between; align-items: center; }
+        .logo { font-weight: 800; font-size: 22px; color: var(--accent); letter-spacing: 1px; }
+        .status { font-size: 12px; color: #94a3b8; }
+
+        .container { padding: 20px; max-width: 1200px; margin: 0 auto; width: 100%; }
+        
+        .grid-financeiro { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 25px; }
+        .card-valor { background: var(--card); padding: 20px; border-radius: 12px; border-left: 5px solid var(--accent); }
+        .card-valor h3 { font-size: 12px; color: #94a3b8; text-transform: uppercase; margin-bottom: 10px; }
+        .card-valor .price { font-size: 24px; font-weight: 800; color: #fff; }
+
+        .dashboard-row { display: grid; grid-template-columns: 1.5fr 1fr; gap: 20px; margin-bottom: 25px; }
+        .card-info { background: var(--card); padding: 20px; border-radius: 12px; height: 100%; }
+
+        /* BUSCA E BOTÃO */
+        .search-container { display: flex; gap: 5px; width: 350px; }
+        .search-box { background: #0f172a; border: 1px solid #334155; color: white; padding: 10px; border-radius: 8px 0 0 8px; width: 100%; outline: none; }
+        .btn-busca { background: var(--accent); border: none; color: white; padding: 0 15px; border-radius: 0 8px 8px 0; cursor: pointer; transition: 0.3s; }
+        .btn-busca:hover { background: #007acc; }
+
+        /* TABELAS E ROLAGEM */
+        .table-container { overflow-y: auto; margin-top: 15px; border: 1px solid #334155; border-radius: 8px; }
+        .h-critico { max-height: 280px; }
+        .h-vendas { max-height: 350px; }
+        .h-inventario { max-height: 500px; }
+
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #0f172a; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--accent); }
+
+        table { width: 100%; border-collapse: collapse; font-size: 14px; }
+        thead th { position: sticky; top: 0; background: #1e293b; z-index: 1; text-align: left; padding: 12px; color: #94a3b8; border-bottom: 2px solid #334155; }
+        td { padding: 12px; border-bottom: 1px solid #0f172a; }
+        
+        .stock-low { color: var(--danger); font-weight: bold; }
+        .stock-ok { color: var(--success); font-weight: bold; }
+        .badge { background: var(--accent); color: white; padding: 4px 8px; border-radius: 6px; font-weight: bold; font-size: 12px; }
+
+        @media (max-width: 768px) {
+            .dashboard-row { grid-template-columns: 1fr; }
+            .search-container { width: 100%; }
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div class="logo"><i class="fa-solid fa-robot"></i> JARVIS BI - JAO EXPRESS</div>
+        <div id="sync-status" class="status">Sincronizando...</div>
+    </header>
+
+    <div class="container">
+        <div class="grid-financeiro">
+            <div class="card-valor"><h3>Vendas Hoje</h3><div id="v-hoje" class="price">R$ 0,00</div></div>
+            <div class="card-valor" style="border-color: #8b5cf6;"><h3>Vendas este Mês</h3><div id="v-mes" class="price">R$ 0,00</div></div>
+            <div class="card-valor" style="border-color: var(--success);"><h3>Vendas este Ano</h3><div id="v-ano" class="price">R$ 0,00</div></div>
+        </div>
+
+        <div class="dashboard-row">
+            <div class="card-info">
+                <h3><i class="fa-solid fa-chart-pie"></i> Meios de Pagamento</h3>
+                <div style="height: 320px; margin-top: 20px;">
+                    <canvas id="chartPagamentos"></canvas>
+                </div>
+            </div>
+
+            <div class="card-info">
+                <h3><i class="fa-solid fa-triangle-exclamation"></i> Estoque Crítico (<=5)</h3>
+                <div class="table-container h-critico">
+                    <table id="tab-estoque-critico">
+                        <thead><tr><th>Produto</th><th>Qtd</th></tr></thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div class="card-info" style="margin-top: 25px;">
+            <h3><i class="fa-solid fa-clock-rotate-left"></i> Últimas 50 Vendas Sincronizadas</h3>
+            <div class="table-container h-vendas">
+                <table id="tab-vendas">
+                    <thead><tr><th>Data</th><th>Pagamento</th><th>Total</th></tr></thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="card-info" style="margin-top: 25px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; flex-wrap: wrap; gap: 10px;">
+                <h3><i class="fa-solid fa-boxes-stacked"></i> Inventário Completo</h3>
+                <div class="search-container">
+                    <input type="text" id="inputBusca" class="search-box" placeholder="Nome ou Código do produto..." onkeyup="filtrarProdutos()">
+                    <button class="btn-busca" onclick="filtrarProdutos()"><i class="fa-solid fa-magnifying-glass"></i></button>
+                </div>
+            </div>
+            <div class="table-container h-inventario">
+                <table id="tab-inventario">
+                    <thead>
+                        <tr>
+                            <th>Cód. Local</th>
+                            <th>Nome do Produto</th>
+                            <th>Cód. Barras</th>
+                            <th>Preço Venda</th>
+                            <th>Estoque Total</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+<script>
+    const CONFIG = {
+        URL: "https://koqrjjpegbfqydupwnqb.supabase.co/rest/v1",
+        KEY: "sb_publishable_oBCz2jw1j4kziZqfC4TPew_LEeCkQtC"
+    };
+
+    let chartObj = null;
+
+    async function carregarDados() {
+        const headers = { "apikey": CONFIG.KEY, "Authorization": `Bearer ${CONFIG.KEY}` };
+        try {
+            const [resProd, resVend] = await Promise.all([
+                fetch(`${CONFIG.URL}/produtos?select=*&order=nome.asc`, { headers }),
+                fetch(`${CONFIG.URL}/vendas?select=*&order=id_venda.desc&limit=100`, { headers })
+            ]);
+
+            const produtos = await resProd.json();
+            const vendas = await resVend.json();
+
+            renderizarEstoqueCritico(produtos);
+            renderizarInventario(produtos);
+            renderizarTabelaVendas(vendas);
+            processarBI(vendas);
+
+            document.getElementById("sync-status").innerText = "Última atualização: " + new Date().toLocaleTimeString();
+        } catch (erro) {
+            console.error("Erro Jarvis:", erro);
+            document.getElementById("sync-status").innerText = "Erro de conexão";
+        }
+    }
+
+    function renderizarEstoqueCritico(produtos) {
+        const corpo = document.querySelector("#tab-estoque-critico tbody");
+        corpo.innerHTML = "";
+        const criticos = produtos.filter(p => parseFloat(p.quantidade_estoque) <= 5);
+        if(criticos.length === 0) {
+            corpo.innerHTML = "<tr><td colspan='2' style='text-align:center; padding:20px;'>Tudo em dia! ✅</td></tr>";
+            return;
+        }
+        criticos.forEach(p => {
+            corpo.innerHTML += `<tr><td>${p.nome}</td><td class="stock-low">${parseFloat(p.quantidade_estoque).toFixed(2)}</td></tr>`;
+        });
+    }
+
+    function renderizarInventario(produtos) {
+        const corpo = document.querySelector("#tab-inventario tbody");
+        corpo.innerHTML = "";
+        produtos.forEach(p => {
+            const qtd = parseFloat(p.quantidade_estoque || 0);
+            corpo.innerHTML += `<tr>
+                <td>${p.id_local}</td>
+                <td>${p.nome}</td>
+                <td>${p.codigo_barras}</td>
+                <td>R$ ${parseFloat(p.preco_venda).toFixed(2)}</td>
+                <td class="${qtd <= 5 ? 'stock-low' : 'stock-ok'}">${qtd.toFixed(2)}</td>
+            </tr>`;
+        });
+    }
+
+    function filtrarProdutos() {
+        const input = document.getElementById("inputBusca").value.toUpperCase();
+        const rows = document.querySelector("#tab-inventario tbody").getElementsByTagName("tr");
+        
+        for (let i = 0; i < rows.length; i++) {
+            // Busca na coluna Nome (index 1) e Código Local (index 0)
+            const tdNome = rows[i].getElementsByTagName("td")[1];
+            const tdCod = rows[i].getElementsByTagName("td")[0];
+            
+            if (tdNome && tdCod) {
+                const txtNome = tdNome.textContent || tdNome.innerText;
+                const txtCod = tdCod.textContent || tdCod.innerText;
+                
+                if (txtNome.toUpperCase().indexOf(input) > -1 || txtCod.toUpperCase().indexOf(input) > -1) {
+                    rows[i].style.display = "";
+                } else {
+                    rows[i].style.display = "none";
+                }
+            }
+        }
+    }
+
+    function renderizarTabelaVendas(vendas) {
+        const corpo = document.querySelector("#tab-vendas tbody");
+        corpo.innerHTML = "";
+        vendas.forEach(v => {
+            corpo.innerHTML += `<tr>
+                <td>${v.data_venda}</td>
+                <td><span class="badge">${v.forma_pagamento1}</span></td>
+                <td>R$ ${parseFloat(v.total_liquido).toFixed(2)}</td>
+            </tr>`;
+        });
+    }
+
+    function processarBI(vendas) {
+        let hoje = 0, mes = 0, ano = 0;
+        const agora = new Date();
+        const d_A = agora.getDate(), m_A = agora.getMonth() + 1, a_A = agora.getFullYear();
+        const pagamentos = {};
+
+        vendas.forEach(v => {
+            const valor = parseFloat(v.total_liquido || 0);
+            const partes = String(v.data_venda || "").split(/[\/\- ]/);
+            if (partes.length >= 3) {
+                let d, m, a;
+                if (partes[0].length === 4) { a=parseInt(partes[0]); m=parseInt(partes[1]); d=parseInt(partes[2]); }
+                else { d=parseInt(partes[0]); m=parseInt(partes[1]); a=parseInt(partes[2]); }
+                if (a === a_A) {
+                    ano += valor;
+                    if (m === m_A) {
+                        mes += valor;
+                        if (d === d_A) hoje += valor;
+                    }
+                }
+            }
+            const meio = v.forma_pagamento1 || "Outros";
+            pagamentos[meio] = (pagamentos[meio] || 0) + valor;
+        });
+
+        const fmt = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
+        document.getElementById("v-hoje").innerText = fmt.format(hoje);
+        document.getElementById("v-mes").innerText = fmt.format(mes);
+        document.getElementById("v-ano").innerText = fmt.format(ano);
+        desenharGrafico(pagamentos);
+    }
+
+    function desenharGrafico(dados) {
+        const ctx = document.getElementById('chartPagamentos').getContext('2d');
+        if (chartObj) chartObj.destroy();
+        chartObj = new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: Object.keys(dados),
+                datasets: [{
+                    data: Object.values(dados),
+                    backgroundColor: ['#0099ff', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6']
+                }]
+            },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { color: '#fff' } } } }
+        });
+    }
+
+    carregarDados();
+    setInterval(carregarDados, 30000);
+</script>
+</body>
+</html>
